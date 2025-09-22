@@ -1,0 +1,203 @@
+{% extends 'base.html' %}
+
+{% block title %}Report{% endblock %}
+
+{% block content %}
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3">Spending Report</h1>
+    <div>
+      <a class="btn btn-secondary" href="/">Back to Transactions</a>
+    </div>
+  </div>
+
+  {% if current_book %}
+    <div class="row mb-4">
+      <div class="col-12">
+        <div class="card">
+          <div class="card-body text-center">
+            <h2 class="card-title">{{ book_name }}</h2>
+            <h3 class="text-primary mb-0">Total Spent: ${{ "%.2f"|format(grand_total) }}</h3>
+            <p class="text-muted">across all categories</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  {% if insights and insights.top_category %}
+    <!-- Majority Expenditure Insights -->
+    <div class="row mb-4">
+      <div class="col-12">
+        <div class="alert alert-info">
+          <h5 class="alert-heading"><i class="fas fa-chart-line me-2"></i>Where Your Money Goes</h5>
+          <p class="mb-2"><strong>{{ insights.top_category.name }}</strong> is your largest expense category, accounting for 
+            <strong>${{ "%.2f"|format(insights.top_category.amount) }}</strong> 
+            (<strong>{{ "%.1f"|format(insights.top_category.percentage) }}%</strong>) of your total spending.</p>
+          <small class="text-muted">
+            {{ insights.top_category.transaction_count }} transactions • 
+            Average: ${{ "%.2f"|format(insights.top_category.avg_transaction) }} per transaction
+          </small>
+        </div>
+      </div>
+    </div>
+
+    <!-- Spending Pattern Analysis -->
+    <div class="row mb-4">
+      <div class="col-lg-8 col-md-12 mb-3">
+        <div class="card">
+          <div class="card-header">
+            <h5 class="card-title mb-0"><i class="fas fa-analytics me-2"></i>Spending Patterns</h5>
+          </div>
+          <div class="card-body">
+            <div class="row">
+              <div class="col-md-6 mb-3">
+                <h6 class="text-muted">Top 3 Categories</h6>
+                <p class="mb-1">Account for <strong>{{ "%.1f"|format(insights.spending_distribution.top_3_percentage) }}%</strong> of spending</p>
+                {% for category in insights.category_stats[:3] %}
+                  <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="small">{{ loop.index }}. {{ category.category }}</span>
+                    <span class="badge bg-primary">{{ "%.1f"|format((category.total / grand_total * 100) if grand_total > 0 else 0) }}%</span>
+                  </div>
+                {% endfor %}
+              </div>
+              <div class="col-md-6 mb-3">
+                <h6 class="text-muted">Spending Behavior</h6>
+                {% if insights.spending_distribution.most_frequent_category %}
+                  <p class="mb-1"><strong>Most frequent:</strong> {{ insights.spending_distribution.most_frequent_category }}</p>
+                {% endif %}
+                {% if insights.spending_distribution.highest_avg_category %}
+                  <p class="mb-1"><strong>Highest average:</strong> {{ insights.spending_distribution.highest_avg_category }}</p>
+                {% endif %}
+                <p class="mb-1"><strong>Categories used:</strong> {{ insights.spending_distribution.categories_count }}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-lg-4 col-md-12 mb-3">
+        <div class="card">
+          <div class="card-header">
+            <h5 class="card-title mb-0"><i class="fas fa-calculator me-2"></i>Statistics</h5>
+          </div>
+          <div class="card-body">
+            <div class="text-center mb-2">
+              <h6 class="text-muted">Average per Transaction</h6>
+              <h5 class="text-success">${{ "%.2f"|format(insights.overall_stats.overall_avg) }}</h5>
+            </div>
+            <hr>
+            <div class="small">
+              <div class="d-flex justify-content-between mb-1">
+                <span>Total Transactions:</span>
+                <strong>{{ insights.overall_stats.total_transactions }}</strong>
+              </div>
+              <div class="d-flex justify-content-between mb-1">
+                <span>Smallest Transaction:</span>
+                <strong>${{ "%.2f"|format(insights.overall_stats.min_amount) }}</strong>
+              </div>
+              <div class="d-flex justify-content-between mb-1">
+                <span>Largest Transaction:</span>
+                <strong>${{ "%.2f"|format(insights.overall_stats.max_amount) }}</strong>
+              </div>
+              <div class="d-flex justify-content-between">
+                <span>Avg per Category:</span>
+                <strong>${{ "%.2f"|format(insights.overall_stats.avg_per_category) }}</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  <div class="row">
+    <div class="col-12">
+      {% if chart_json %}
+        <div class="card">
+          <div class="card-header">
+            <h5 class="card-title mb-0">Interactive Spending by Category</h5>
+            <small class="text-muted">Hover over slices for details, click to highlight</small>
+          </div>
+          <div class="card-body">
+            <div id="chart" style="width:100%; height:500px;"></div>
+          </div>
+        </div>
+      {% else %}
+        <div class="alert alert-info text-center" role="alert">
+          <h4 class="alert-heading">No spending data yet!</h4>
+          <p class="mb-0">Add some transactions to see your spending report and interactive chart.</p>
+          <hr>
+          <a class="btn btn-primary" href="/add">Add Transaction</a>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if grand_total > 0 and insights %}
+    <div class="row mt-4">
+      <div class="col-12">
+        <div class="card">
+          <div class="card-header">
+            <h5 class="card-title mb-0"><i class="fas fa-list me-2"></i>Category Breakdown</h5>
+          </div>
+          <div class="card-body">
+            <div class="table-responsive">
+              <table class="table table-sm">
+                <thead>
+                  <tr>
+                    <th>Rank</th>
+                    <th>Category</th>
+                    <th>Amount</th>
+                    <th>% of Total</th>
+                    <th>Transactions</th>
+                    <th>Avg/Transaction</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for category in insights.category_stats %}
+                  <tr{% if loop.index == 1 %} class="table-warning"{% endif %}>
+                    <td>
+                      {% if loop.index == 1 %}
+                        <i class="fas fa-crown text-warning me-1"></i>
+                      {% endif %}
+                      {{ loop.index }}
+                    </td>
+                    <td><strong>{{ category.category }}</strong></td>
+                    <td>${{ "%.2f"|format(category.total) }}</td>
+                    <td>
+                      <span class="badge bg-{% if loop.index == 1 %}warning{% elif loop.index <= 3 %}info{% else %}secondary{% endif %}">
+                        {{ "%.1f"|format((category.total / grand_total * 100) if grand_total > 0 else 0) }}%
+                      </span>
+                    </td>
+                    <td>{{ category.transaction_count }}</td>
+                    <td>${{ "%.2f"|format(category.avg_amount) }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  {% if chart_json %}
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <script>
+    var chartData = {{ chart_json|safe }};
+    Plotly.newPlot('chart', chartData.data, chartData.layout, {
+      responsive: true,
+      displayModeBar: true,
+      displaylogo: false,
+      modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d'],
+      toImageButtonOptions: {
+        format: 'png',
+        filename: 'spending_report',
+        height: 500,
+        width: 800,
+        scale: 1
+      }
+    });
+  </script>
+  {% endif %}
+{% endblock %}

@@ -1,0 +1,29 @@
+{% extends 'base.html' %}
+
+{% block title %}Edit Transaction{% endblock %}
+
+{% block content %}
+  <h1 class="h4 mb-3">Edit Transaction</h1>
+  <form method="post" action="" class="row g-3">
+    <div class="col-12">
+      <label class="form-label">Description</label>
+      <input class="form-control" type="text" name="description" value="{{ row.description }}">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Amount</label>
+      <input class="form-control" type="number" step="0.01" name="amount" value="{{ row.amount }}" required>
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Category</label>
+      <select class="form-select" name="category">
+        {% for c in categories %}
+          <option value="{{c}}" {% if row.category==c %}selected{% endif %}>{{c}}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-12">
+      <button class="btn btn-primary" type="submit">Save</button>
+      <a class="btn btn-secondary ms-2" href="/">Back</a>
+    </div>
+  </form>
+{% endblock %}

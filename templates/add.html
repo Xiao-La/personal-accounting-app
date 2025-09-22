@@ -1,0 +1,304 @@
+{% extends 'base.html' %}
+
+{% block title %}Quick Add Transaction{% endblock %}
+
+{% block content %}
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3">Quick Transaction Entry</h1>
+    <div>
+      <a class="btn btn-secondary" href="/">Back to Transactions</a>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="col-lg-8">
+      <!-- Quick Entry Form -->
+      <div class="card">
+        <div class="card-header">
+          <h5 class="card-title mb-0">Rapid Entry Mode</h5>
+          <small class="text-muted">Perfect for entering bank transaction records</small>
+        </div>
+        <div class="card-body">
+          <form method="post" id="rapidEntryForm" autocomplete="off">
+            <!-- Amount Input (Primary Focus) -->
+            <div class="mb-3">
+              <label class="form-label fw-bold">Amount *</label>
+              <div class="input-group input-group-lg">
+                <span class="input-group-text">$</span>
+                <input type="number" step="0.01" class="form-control form-control-lg" name="amount" id="amountInput" 
+                       placeholder="0.00" value="{{ amount or '' }}" required autofocus>
+              </div>
+              <div class="form-text">Type amount and press Tab to move to category selection</div>
+            </div>
+
+            <!-- Description (Optional) -->
+            <div class="mb-3">
+              <label class="form-label">Description <span class="text-muted">(optional)</span></label>
+              <input type="text" class="form-control" name="description" id="descriptionInput" 
+                     placeholder="{{ DEFAULT_DESCRIPTION }}" value="{{ description or '' }}">
+              <div class="form-text">Press Enter to skip, or type description</div>
+            </div>
+
+            <!-- Category Selection with Keyboard Shortcuts -->
+            <div class="mb-4">
+              <label class="form-label fw-bold">Category</label>
+              <div class="row g-2" id="categoryButtons">
+                {% for category in categories %}
+                <div class="col-md-4 col-lg-3">
+                  <button type="button" class="btn btn-outline-primary w-100 category-btn" 
+                          data-category="{{ category }}" data-key="{{ loop.index }}">
+                    <span class="badge bg-primary me-2">{{ loop.index }}</span>
+                    {{ category }}
+                  </button>
+                </div>
+                {% endfor %}
+              </div>
+              <div class="form-text mt-2">
+                <strong>Keyboard Shortcuts:</strong> Press number keys 1-{{ categories|length }} to select category, or use mouse
+              </div>
+              <input type="hidden" name="category" id="selectedCategory" value="{{ category or '' }}">
+            </div>
+
+            <!-- Submit Buttons -->
+            <div class="d-flex gap-2">
+              <button type="submit" class="btn btn-success btn-lg flex-fill" id="submitBtn" disabled>
+                <i class="bi bi-plus-circle me-2"></i>
+                Add Transaction <span class="badge bg-light text-dark ms-2">Enter</span>
+              </button>
+              <button type="button" class="btn btn-outline-secondary" id="clearBtn">
+                Clear <span class="badge bg-light text-dark">Esc</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-4">
+      <!-- Quick Help Panel -->
+      <div class="card">
+        <div class="card-header">
+          <h6 class="card-title mb-0">⚡ Speed Tips</h6>
+        </div>
+        <div class="card-body">
+          <ul class="list-unstyled mb-0">
+            <li class="mb-2">
+              <strong>1.</strong> Enter amount → Press <kbd>Tab</kbd>
+            </li>
+            <li class="mb-2">
+              <strong>2.</strong> Skip description → Press <kbd>Enter</kbd>
+            </li>
+            <li class="mb-2">
+              <strong>3.</strong> Choose category → Press <kbd>1-{{ categories|length }}</kbd>
+            </li>
+            <li class="mb-2">
+              <strong>4.</strong> Submit → Press <kbd>Enter</kbd>
+            </li>
+            <li class="mb-2">
+              <strong>ESC:</strong> Clear form
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Recent Entries -->
+      <div class="card mt-3">
+        <div class="card-header">
+          <h6 class="card-title mb-0">📝 Entry Flow</h6>
+        </div>
+        <div class="card-body">
+          <div class="small">
+            <div class="mb-2">✓ Amount: <span id="previewAmount">$0.00</span></div>
+            <div class="mb-2">✓ Description: <span id="previewDescription">Default</span></div>
+            <div class="mb-2">✓ Category: <span id="previewCategory">None selected</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast for successful additions -->
+  <div class="toast-container position-fixed top-0 end-0 p-3">
+    <div id="successToast" class="toast" role="alert">
+      <div class="toast-header">
+        <strong class="me-auto text-success">✓ Transaction Added</strong>
+        <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
+      </div>
+      <div class="toast-body">
+        Ready for next entry!
+      </div>
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const amountInput = document.getElementById('amountInput');
+      const descriptionInput = document.getElementById('descriptionInput');
+      const categoryButtons = document.querySelectorAll('.category-btn');
+      const selectedCategoryInput = document.getElementById('selectedCategory');
+      const submitBtn = document.getElementById('submitBtn');
+      const clearBtn = document.getElementById('clearBtn');
+      const form = document.getElementById('rapidEntryForm');
+      
+      // Preview elements
+      const previewAmount = document.getElementById('previewAmount');
+      const previewDescription = document.getElementById('previewDescription');
+      const previewCategory = document.getElementById('previewCategory');
+
+      // Update preview as user types
+      amountInput.addEventListener('input', function() {
+        const value = parseFloat(this.value) || 0;
+        previewAmount.textContent = '$' + value.toFixed(2);
+        checkFormValidity();
+      });
+
+      descriptionInput.addEventListener('input', function() {
+        previewDescription.textContent = this.value || '{{ DEFAULT_DESCRIPTION }}';
+      });
+
+      // Category selection
+      categoryButtons.forEach(btn => {
+        btn.addEventListener('click', function() {
+          selectCategory(this.dataset.category, this);
+        });
+      });
+
+      function selectCategory(category, buttonEl) {
+        // Remove previous selection
+        categoryButtons.forEach(b => b.classList.remove('active'));
+        
+        // Add selection to clicked button
+        buttonEl.classList.add('active');
+        selectedCategoryInput.value = category;
+        previewCategory.textContent = category;
+        
+        checkFormValidity();
+        
+        // Auto-focus submit or amount for next entry
+        if (amountInput.value) {
+          submitBtn.focus();
+        }
+      }
+
+      function checkFormValidity() {
+        const hasAmount = amountInput.value && parseFloat(amountInput.value) !== 0;
+        const hasCategory = selectedCategoryInput.value;
+        submitBtn.disabled = !(hasAmount && hasCategory);
+      }
+
+      // Keyboard shortcuts
+      document.addEventListener('keydown', function(e) {
+        // Don't trigger shortcuts when user is typing in input fields
+        const isTypingInInput = e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA';
+        
+        // Number keys for category selection - only when not typing in inputs
+        if (e.key >= '1' && e.key <= '9' && !isTypingInInput) {
+          const index = parseInt(e.key) - 1;
+          if (index < categoryButtons.length) {
+            e.preventDefault();
+            categoryButtons[index].click();
+          }
+        }
+        
+        // ESC to clear form
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          clearForm();
+        }
+        
+        // Enter handling
+        if (e.key === 'Enter') {
+          if (isTypingInInput) {
+            // If in amount field and has value, move to description
+            if (e.target.name === 'amount' && e.target.value) {
+              e.preventDefault();
+              descriptionInput.focus();
+            }
+            // If in description field and form is valid, submit
+            else if (e.target.name === 'description' && !submitBtn.disabled) {
+              e.preventDefault();
+              form.submit();
+            }
+          } else {
+            // Global enter to submit when form is valid
+            if (!submitBtn.disabled) {
+              e.preventDefault();
+              form.submit();
+            } else if (!amountInput.value) {
+              e.preventDefault();
+              amountInput.focus();
+            } else if (!selectedCategoryInput.value) {
+              e.preventDefault();
+              showToast('Please select a category using keys 1-7', 'warning');
+            }
+          }
+        }
+      });
+
+      // Clear button
+      clearBtn.addEventListener('click', clearForm);
+
+      function clearForm() {
+        form.reset();
+        categoryButtons.forEach(b => b.classList.remove('active'));
+        selectedCategoryInput.value = '';
+        previewAmount.textContent = '$0.00';
+        previewDescription.textContent = '{{ DEFAULT_DESCRIPTION }}';
+        previewCategory.textContent = 'None selected';
+        submitBtn.disabled = true;
+        amountInput.focus();
+      }
+
+      // Toast notification function
+      function showToast(message, type = 'info') {
+        // Create toast element
+        const toast = document.createElement('div');
+        toast.className = `alert alert-${type === 'warning' ? 'warning' : 'info'} position-fixed`;
+        toast.style.cssText = 'top: 20px; right: 20px; z-index: 1050; min-width: 300px;';
+        toast.textContent = message;
+        
+        document.body.appendChild(toast);
+        
+        // Remove after 3 seconds
+        setTimeout(() => {
+          if (toast.parentNode) {
+            toast.parentNode.removeChild(toast);
+          }
+        }, 3000);
+      }
+
+      // Focus management for rapid entry
+      amountInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Tab' && this.value) {
+          e.preventDefault();
+          descriptionInput.focus();
+        }
+      });
+
+      descriptionInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          // Focus first category button or submit if category already selected
+          if (selectedCategoryInput.value) {
+            submitBtn.focus();
+          } else if (categoryButtons.length > 0) {
+            categoryButtons[0].focus();
+          }
+        }
+      });
+
+      // Initial setup
+      checkFormValidity();
+      
+      // If there are values from a previous failed submission, restore category selection
+      if (selectedCategoryInput.value) {
+        categoryButtons.forEach(btn => {
+          if (btn.dataset.category === selectedCategoryInput.value) {
+            btn.classList.add('active');
+            previewCategory.textContent = selectedCategoryInput.value;
+          }
+        });
+      }
+    });
+  </script>
+{% endblock %}

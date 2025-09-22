@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+
+{% block title %}Chart{% endblock %}
+
+{% block content %}
+  <h1 class="h4 mb-3">Transactions Chart</h1>
+  <p><a class="btn btn-secondary" href="/">Back</a></p>
+  {% if not plot_url %}
+    <div class="alert alert-info">No transactions yet — add some at <a href="/add">Add Transaction</a> to see the chart.</div>
+  {% else %}
+    <div class="text-center">
+      <img class="img-fluid" src="data:image/png;base64,{{ plot_url }}" alt="chart">
+    </div>
+  {% endif %}
+{% endblock %}
