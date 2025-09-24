@@ -17,10 +17,22 @@
 
   <div class="list-group">
     {% for b in rows %}
-      <a class="list-group-item list-group-item-action d-flex justify-content-between align-items-center" href="/book/{{ b.id }}">
-        <div>{{ b.name }}</div>
-        <div class="text-muted small">View</div>
-      </a>
+      <div class="list-group-item d-flex justify-content-between align-items-center">
+        <div>
+          <a href="/book/{{ b.id }}" class="text-decoration-none">
+            <h6 class="mb-0">{{ b.name }}</h6>
+          </a>
+        </div>
+        <div class="btn-group" role="group">
+          <a class="btn btn-primary btn-sm" href="/book/{{ b.id }}">View</a>
+          <a class="btn btn-success btn-sm" href="/export/csv/{{ b.id }}" title="Export transactions to CSV">
+            <i class="fas fa-file-csv"></i> CSV
+          </a>
+          <a class="btn btn-info btn-sm" href="/report/{{ b.id }}" title="View report">
+            <i class="fas fa-chart-pie"></i> Report
+          </a>
+        </div>
+      </div>
     {% else %}
       <div class="list-group-item">No books yet</div>
     {% endfor %}

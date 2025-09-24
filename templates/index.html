@@ -4,10 +4,15 @@
 
 {% block content %}
   <div class="d-flex justify-content-between align-items-center mb-3">
-    <h1 class="h3">Transactions</h1>
+    <h1 class="h3">Transactions{% if current_book %} - {{ current_book.name }}{% endif %}</h1>
     <div>
       <a class="btn btn-primary me-2" href="/add">Add</a>
       <a class="btn btn-secondary me-2" href="/report">Report</a>
+      {% if current_book %}
+        <a class="btn btn-success me-2" href="/export/csv/{{ current_book.id }}" title="Export transactions to CSV">
+          <i class="fas fa-file-csv"></i> Export CSV
+        </a>
+      {% endif %}
       <a class="btn btn-outline-secondary" href="/categories">Categories</a>
     </div>
   </div>

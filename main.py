@@ -1,12 +1,23 @@
 # write a webapp to display accounting data
 # functions include: adding transactions and sort them out, viewing charts
-from flask import Flask, render_template, request, redirect, url_for, flash, session
+from flask import Flask, render_template, request, redirect, url_for, flash, session, make_response, send_file
 import sqlite3 as sqlite
 import pandas as pd
 from datetime import datetime
 import plotly.graph_objects as go
 import plotly.utils
 import json
+import io
+import tempfile
+import os
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.lib import colors
+from reportlab.pdfbase import pdfutils
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfbase import pdfmetrics
 
 app = Flask(__name__)
 DATABASE = 'accounting.db'
@@ -529,9 +540,269 @@ def report():
                          book_name=book['name'], insights=insights)
 
 
+@app.route('/report/<int:book_id>')
+def report_with_book_id(book_id):
+    """Show report for a specific book by first selecting it."""
+    # Verify the book exists and set it in session, then redirect to main report
+    names, books = get_books()
+    found = None
+    for b in books:
+        if b['id'] == book_id:
+            found = b
+            break
+    if not found:
+        flash('Book not found', 'error')
+        return redirect(url_for('index'))
+    
+    # Set the session selection
+    session['book_id'] = book_id
+    # Redirect to the main report route
+    return redirect(url_for('report'))
+
+
+@app.route('/export/csv/<int:book_id>')
+def export_book_csv(book_id):
+    """Export all transactions for a specific book to CSV format."""
+    # Verify the book exists
+    names, books = get_books()
+    found = None
+    for b in books:
+        if b['id'] == book_id:
+            found = b
+            break
+    if not found:
+        flash('Book not found', 'error')
+        return redirect(url_for('index'))
+    
+    # Get all transactions for this book with date information
+    with sqlite.connect(DATABASE) as con:
+        df = pd.read_sql_query(
+            """SELECT date, description, amount, category 
+               FROM transactions 
+               WHERE book_id = ? 
+               ORDER BY date DESC, id DESC""", 
+            con, params=(book_id,)
+        )
+    
+    if df.empty:
+        flash('No transactions found to export', 'warning')
+        return redirect(url_for('view_book', book_id=book_id))
+    
+    # Create CSV content
+    output = io.StringIO()
+    df.to_csv(output, index=False)
+    output.seek(0)
+    
+    # Create response
+    response = make_response(output.getvalue())
+    response.headers['Content-Type'] = 'text/csv'
+    response.headers['Content-Disposition'] = f'attachment; filename="{found["name"]}_transactions.csv"'
+    
+    return response
+
+
+@app.route('/export/pdf/<int:book_id>')
+def export_report_pdf(book_id):
+    """Export the spending report for a specific book to PDF format."""
+    # Verify the book exists
+    names, books = get_books()
+    found = None
+    for b in books:
+        if b['id'] == book_id:
+            found = b
+            break
+    if not found:
+        flash('Book not found', 'error')
+        return redirect(url_for('index'))
+    
+    # Get the same data as the report page
+    with sqlite.connect(DATABASE) as con:
+        df = pd.read_sql_query(
+            """SELECT category, SUM(amount) as total, COUNT(*) as transaction_count, 
+                      AVG(amount) as avg_amount
+               FROM transactions 
+               WHERE book_id = ? 
+               GROUP BY category 
+               ORDER BY total DESC""",
+            con, params=(book_id,)
+        )
+        
+        # Get overall statistics
+        stats_df = pd.read_sql_query(
+            """SELECT COUNT(*) as total_transactions, 
+                      AVG(amount) as overall_avg,
+                      MIN(amount) as min_amount,
+                      MAX(amount) as max_amount,
+                      SUM(amount) as grand_total
+               FROM transactions 
+               WHERE book_id = ?""",
+            con, params=(book_id,)
+        )
+    
+    if df.empty:
+        flash('No transactions found to export', 'warning')
+        return redirect(url_for('view_book', book_id=book_id))
+    
+    # Extract statistics
+    grand_total = float(stats_df.iloc[0]['grand_total']) if not stats_df.empty else 0
+    total_transactions = int(stats_df.iloc[0]['total_transactions']) if not stats_df.empty else 0
+    overall_avg = float(stats_df.iloc[0]['overall_avg']) if not stats_df.empty else 0
+    min_amount = float(stats_df.iloc[0]['min_amount']) if not stats_df.empty else 0
+    max_amount = float(stats_df.iloc[0]['max_amount']) if not stats_df.empty else 0
+    
+    # Create temporary file for PDF
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
+    temp_file.close()
+    
+    try:
+        # Create PDF document
+        doc = SimpleDocTemplate(temp_file.name, pagesize=A4)
+        styles = getSampleStyleSheet()
+        story = []
+        
+        # Try to register Chinese font (fallback to default if not available)
+        chinese_font_name = 'Helvetica'  # Default fallback
+        try:
+            # Try to find and register a Chinese font
+            import platform
+            system = platform.system()
+            
+            chinese_font_path = None
+            if system == 'Darwin':  # macOS
+                # Try common Chinese fonts on macOS
+                possible_fonts = [
+                    '/System/Library/Fonts/PingFang.ttc',
+                    '/System/Library/Fonts/STHeiti Light.ttc',
+                    '/System/Library/Fonts/Hiragino Sans GB.ttc',
+                    '/Library/Fonts/Arial Unicode MS.ttf'
+                ]
+                for font_path in possible_fonts:
+                    if os.path.exists(font_path):
+                        chinese_font_path = font_path
+                        chinese_font_name = 'ChineseFont'
+                        break
+            elif system == 'Windows':
+                possible_fonts = [
+                    'C:/Windows/Fonts/simhei.ttf',
+                    'C:/Windows/Fonts/simsun.ttc',
+                    'C:/Windows/Fonts/msyh.ttc'
+                ]
+                for font_path in possible_fonts:
+                    if os.path.exists(font_path):
+                        chinese_font_path = font_path
+                        chinese_font_name = 'ChineseFont'
+                        break
+            
+            if chinese_font_path:
+                pdfmetrics.registerFont(TTFont(chinese_font_name, chinese_font_path))
+                
+        except Exception:
+            chinese_font_name = 'Helvetica'  # Fallback to default font
+        
+        # Create custom styles with Chinese font support
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=24,
+            spaceAfter=30,
+            alignment=1,  # Center alignment
+            fontName=chinese_font_name,
+        )
+        
+        heading2_style = ParagraphStyle(
+            'CustomHeading2',
+            parent=styles['Heading2'],
+            fontName=chinese_font_name,
+            fontSize=16,
+            spaceAfter=12,
+        )
+        
+        stats_style = ParagraphStyle(
+            'StatsStyle',
+            parent=styles['Normal'],
+            fontSize=12,
+            spaceAfter=6,
+            fontName=chinese_font_name,
+        )
+        
+        normal_style = ParagraphStyle(
+            'CustomNormal',
+            parent=styles['Normal'],
+            fontName=chinese_font_name,
+        )
+        
+        # Title
+        story.append(Paragraph(f'Spending Report - {found["name"]}', title_style))
+        story.append(Spacer(1, 20))
+        
+        # Overall statistics
+        story.append(Paragraph('<b>Overall Statistics</b>', heading2_style))
+        story.append(Paragraph(f'Total Spent: <b>${grand_total:.2f}</b>', stats_style))
+        story.append(Paragraph(f'Total Transactions: <b>{total_transactions}</b>', stats_style))
+        story.append(Paragraph(f'Average per Transaction: <b>${overall_avg:.2f}</b>', stats_style))
+        story.append(Paragraph(f'Smallest Transaction: <b>${min_amount:.2f}</b>', stats_style))
+        story.append(Paragraph(f'Largest Transaction: <b>${max_amount:.2f}</b>', stats_style))
+        story.append(Spacer(1, 20))
+        
+        # Category breakdown table
+        story.append(Paragraph('<b>Spending by Category</b>', heading2_style))
+        
+        # Prepare table data
+        table_data = [['Category', 'Amount', 'Transactions', 'Avg per Transaction', 'Percentage']]
+        for _, row in df.iterrows():
+            percentage = (row['total'] / grand_total * 100) if grand_total > 0 else 0
+            category_name = str(row['category']) if pd.notna(row['category']) else 'Uncategorized'
+            table_data.append([
+                category_name,
+                f'${row["total"]:.2f}',
+                str(int(row['transaction_count'])),
+                f'${row["avg_amount"]:.2f}',
+                f'{percentage:.1f}%'
+            ])
+        
+        # Create and style the table
+        table = Table(table_data)
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('ALIGN', (0, 1), (0, -1), 'LEFT'),  # Left align category names
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTNAME', (0, 1), (0, -1), chinese_font_name),  # Category names with Chinese support
+            ('FONTNAME', (1, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, 0), 12),
+            ('FONTSIZE', (0, 1), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        
+        story.append(table)
+        story.append(Spacer(1, 20))
+        
+        # Add a simple text summary for top spending category
+        if not df.empty:
+            story.append(Paragraph('<b>Spending Summary</b>', heading2_style))
+            top_category = df.iloc[0]
+            summary_text = f"Top spending category: <b>{top_category['category']}</b> (${top_category['total']:.2f}, {(top_category['total']/grand_total*100):.1f}% of total)"
+            story.append(Paragraph(summary_text, normal_style))
+        
+        # Build PDF
+        doc.build(story)
+        
+        # Send the file
+        return send_file(
+            temp_file.name,
+            as_attachment=True,
+            download_name=f'{found["name"]}_report.pdf',
+            mimetype='application/pdf'
+        )
+        
+    finally:
+        # Clean up temp file after a delay (Flask handles this)
+        pass
+
+
 if __name__ == '__main__':
     init_db()
-    # Disable the reloader to avoid spawning child processes that might interact poorly
-    # with GUI backends; Agg backend avoids GUI windows, but disabling the reloader
-    # also keeps the app in a single process during development here.
-    app.run(debug=True, use_reloader=False)
+    app.run(debug=True)
